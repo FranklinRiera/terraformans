@@ -1,0 +1,4 @@
+wheel
+gunicorn
+flask
+psycopg2-binary

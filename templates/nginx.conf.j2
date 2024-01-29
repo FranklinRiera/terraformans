@@ -1,0 +1,8 @@
+server {
+    listen {{ NGINX_PORT }};
+
+    location / {
+        include proxy_params;
+        proxy_pass http://unix:{{PROJECT_HOME }}/myproject.sock;
+    }
+}

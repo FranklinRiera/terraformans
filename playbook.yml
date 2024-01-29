@@ -1,0 +1,94 @@
+---
+- name: deploy web app
+  hosts: all
+    #  connection: local
+  become: true
+  gather_facts: no
+
+  vars:
+    LOCAL_PROJECT_HOME: "./myproject"
+    PROJECT_HOME: "/opt/myproject"
+    PROJECT_VENV: "myprojectvenv"
+    MAIN_PY: "myproject.py"
+    MAIN_SOCK: "myproject.sock"
+    NGINX_PORT: 80
+    PORT: 5000
+
+  tasks:
+  - name: Esperar hasta que la máquina virtual esté lista para la conexión SSH
+    wait_for_connection:
+      timeout: 120
+
+  - name: apt install required packages
+    apt:
+      update_cache: yes
+      name:
+        - wget
+        - curl
+        - python3-pip
+        - python3-dev
+        - nginx
+        - python3-venv
+      state: present
+
+  - name: Create remote directory
+    file: path={{PROJECT_HOME}} state=directory
+
+  - name: Copy project code to website server
+    copy: src={{item}} dest={{PROJECT_HOME}}
+    with_fileglob:
+     - "{{LOCAL_PROJECT_HOME}}/*"
+
+  #- name: Create flaskenviroment file in project dir
+   # template:
+    #  src: "flaskenv.j2"
+     # dest: "{{PROJECT_HOME}}/.flaskenv"
+
+  #- name: Create enviroment file in project dir
+   # template:
+    #  src: "env.j2"
+     # dest: "{{PROJECT_HOME}}/.env"
+
+  - name: Install reqs into the specified virtualenv using Python3
+    ansible.builtin.pip:
+      requirements: "{{ PROJECT_HOME }}/requirements.txt"
+      virtualenv: "{{ PROJECT_HOME }}/{{ PROJECT_VENV }}"
+      virtualenv_command: "python3 -m venv"
+
+  - name: delete a file (or symlink) if it exists
+    file:
+      path: "/etc/nginx/sites-enabled/default"
+      state: absent
+
+  - name: nginx.conf config file
+    template:
+      src: "nginx.conf.j2"
+      dest: "/etc/nginx/sites-available/myproject"
+
+  - name: create a symlink if it doesn't exist
+    file:
+      src: "/etc/nginx/sites-available/myproject"
+      dest: "/etc/nginx/sites-enabled/myproject"
+      state: link
+
+  - name: Create myproject service
+    template:
+      src: "myproject.service.j2"
+      dest: "/etc/systemd/system/myproject.service"
+
+  - name: Reload the SystemD to re-read configurations
+    systemd:
+      daemon-reload: yes
+
+  - name: Enable the myproject service and start
+    systemd:
+      name: '{{ item }}.service'
+      enabled: yes
+      state: started
+    loop:
+      - myproject
+
+  - name: restart nginx service
+    systemd:
+      name: nginx
+      state: restarted

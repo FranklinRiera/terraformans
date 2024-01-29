@@ -1,0 +1,117 @@
+---
+- name: Install and set up Postgres
+  hosts: webservers
+  become: true
+  gather_facts: true
+  vars:
+    postgres_root_user: root
+    postgres_root_pass: root
+    db_name : DB
+    allow_world_readable_tmpfiles: true
+
+  tasks:
+    - name: Update apt repo and cache on all Debian/Ubuntu boxes
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+        cache_valid_time: 3600
+
+#    - name: Upgrade all packages on servers
+#      apt:
+#        upgrade: dist
+#        force_apt_get: yes
+
+    - name: Install required packages
+      apt:
+        update_cache: yes
+        name:
+          - gnupg2
+          - wget
+          - python3-psycopg2
+          - acl
+        state: present
+
+
+    - name: Install postgresql
+      apt:
+        name: postgresql
+        update_cache: yes
+      notify:
+        - Enable Postgresql
+
+    - name: Ensure PostgreSQL is listening on *
+      lineinfile:
+        dest: /etc/postgresql/15/main/postgresql.conf
+        regexp: '^listen_addresses\s*='
+        line: "listen_addresses='*'"
+        state: present
+      notify: Restart Postgresql
+
+    - name: Add new configuration to "pg_hba.conf"
+      blockinfile:
+        dest: /etc/postgresql/15/main/pg_hba.conf
+        block: |
+          host    all             all             0.0.0.0/0                md5
+          host    all             all             ::/0                     md5          
+      notify: Restart Postgresql
+
+    - name: Create the database specified in vars
+      become: yes
+      become_user: postgres
+      postgresql_db: name='{{ db_name }}'
+          template='template0'
+          state=present
+
+    - name: Ensure user has access to the new database
+      become: yes
+      become_user: postgres
+      postgresql_user: db={{ db_name }}
+          name={{ postgres_root_user }}
+          password={{ postgres_root_pass }}
+          priv=ALL
+          state=present
+
+    - name: Create a Superuser PostgreSQL database user
+      become: yes
+      become_user: postgres
+      postgresql_user:
+        name: '{{ postgres_root_user }}'
+        password: '{{ postgres_root_pass }}'
+        role_attr_flags: CREATEDB,SUPERUSER,CREATEROLE
+        encrypted: yes
+        state: present
+
+    - name: Create a table
+      become: yes
+      become_user: postgres
+      postgresql_table:
+        db: '{{ db_name }}'
+        owner: postgres
+        name: form
+        columns:
+          - name varchar(255)
+          - lastname varchar(255)
+
+  handlers:
+    - name: Reload UFW
+      command: /usr/sbin/ufw reload
+
+    - name: Restart Postgresql
+      systemd:
+        name: postgresql
+        state: restarted
+
+    - name: Start Postgresql
+      systemd:
+        name: postgresql
+        state: started
+
+    - name: Stop Postgresql
+      systemd:
+        name: postgresql
+        state: stopped
+
+    - name: Enable Postgresql
+      systemd:
+        name: postgresql
+        enabled: yes
