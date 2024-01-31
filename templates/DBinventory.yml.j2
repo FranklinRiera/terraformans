@@ -1,0 +1,7 @@
+webservers:
+  hosts:
+    db1:
+      ansible_port: 22
+      ansible_host: {{DBip}}
+      ansible_user: "root"
+      ansible_ssh_private_key_file: "./ansiblekey"
